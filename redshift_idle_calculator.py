@@ -1122,9 +1122,12 @@ def calculate_cost_savings(cluster_id: str, region: str, idle_percentage: float,
     required_rpu = calculate_rpu_requirement(node_type, number_of_nodes)
     print(f"   Serverless所需RPU: {required_rpu}")
     
-    # Serverless定价（中国北京区域：¥2.692 per RPU hour）
+    # Serverless定价
     if region.startswith('cn-'):
-        rpu_hourly_cost = 2.692  # 人民币/RPU/小时
+        if region == 'cn-northwest-1':
+            rpu_hourly_cost = 2.093  # 宁夏区域：¥2.093 per RPU hour
+        else:
+            rpu_hourly_cost = 2.692  # 北京区域：¥2.692 per RPU hour
         currency_symbol = '¥'
     else:
         rpu_hourly_cost = 0.375  # 美元/RPU/小时（估算）
