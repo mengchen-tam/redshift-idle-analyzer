@@ -9,7 +9,7 @@ A simple and efficient tool for analyzing Amazon Redshift cluster idle time and 
 - 📊 **Smart Analysis**: Analyze actual cluster usage patterns based on multiple CloudWatch metrics
 - ⏱️ **Precise Calculation**: Calculate idle time percentage and active state distribution
 - 💰 **Cost Assessment**: Evaluate potential cost savings from Serverless migration
-- 🌍 **Global Support**: Support all AWS regions (including China regions)
+- 🌍 **Region Support**: Primarily supports China regions, limited functionality for Global regions
 - 🚀 **Easy to Use**: Single-file script with minimal deployment complexity
 - 🔍 **Data Validation**: Built-in data quality checks and permission validation
 - 🧪 **Comprehensive Testing**: Complete test suite included
@@ -138,6 +138,8 @@ Ensure the AWS credentials running the script have the following permissions:
 
 ⚠️  Important Notes:
    - Cost estimates are based on simplified models, actual costs may vary
+   - All prices are hardcoded based on AWS official pricing as of January 2024
+   - Global regions (US, Europe, etc.) have not been fully tested, use with caution
    - Serverless has minimum billing units and concurrency limits
    - Recommend testing Serverless performance in non-production environments first
    - Consider data migration and application compatibility
@@ -212,9 +214,25 @@ A: All mainstream instance types are supported:
 ### Q: Any special considerations for China regions?
 A: 
 - Default support for China Beijing region (cn-north-1)
+- Support for China Ningxia region (cn-northwest-1)
 - Uses RMB pricing based on latest AWS China region prices
 - Serverless RPU calculation: 1 RPU = 4 x RA3.XLPlus, minimum 8 RPU
 - Ensure using China region AWS credentials
+
+### Q: How accurate are Global regions and pricing?
+A: **Important Notes**:
+- **Testing Scope**: This tool has been thoroughly tested primarily in China regions (cn-north-1, cn-northwest-1)
+- **Global Regions**: US, Europe, Asia-Pacific and other Global regions have not been fully tested and may have compatibility issues
+- **Pricing Data**: All instance and RPU prices are hardcoded based on AWS official pricing as of January 2024
+- **Pricing Accuracy**: 
+  - China region prices are relatively accurate and regularly updated
+  - Global region prices are for reference only and may differ from actual prices
+  - Recommend verifying current AWS official pricing before use
+
+**Recommendations**: 
+- Test functionality in a test environment before using in Global regions
+- Regularly check AWS official pricing pages to confirm price accuracy
+- Use cost estimation results as reference and conduct more detailed cost analysis
 
 ## 🔧 Troubleshooting
 
