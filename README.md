@@ -1,5 +1,7 @@
 # Redshift空闲时间计算器
 
+**中文** | [English](README_EN.md)
+
 一个简单高效的工具，用于分析Amazon Redshift集群的空闲时间，评估迁移到Redshift Serverless的潜在成本节省。
 
 ## 🌟 功能特性
@@ -21,7 +23,7 @@
 ### 安装步骤
 1. 下载脚本文件：
 ```bash
-wget https://raw.githubusercontent.com/your-repo/redshift_idle_calculator.py
+wget https://raw.githubusercontent.com/mengchen-tam/redshift-idle-analyzer/main/redshift_idle_calculator.py
 # 或直接复制脚本内容
 ```
 
