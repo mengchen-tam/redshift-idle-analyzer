@@ -46,12 +46,16 @@ __author__ = "Redshift Cost Optimizer"
 # 数据结构定义
 MetricPoint = namedtuple('MetricPoint', ['timestamp', 'value'])
 
-def get_rpu_price_dynamic(region: str) -> Dict[str, Any]:
+def get_redshift_price_dynamic(region: str, price_type: str = 'rpu', instance_type: str = None, 
+                              term_type: str = 'on_demand') -> Dict[str, Any]:
     """
-    动态获取RPU价格，优先使用AWS Pricing API，失败时使用备用价格
+    通用的Redshift价格查询函数，支持RPU和实例价格查询
     
     Args:
         region: AWS区域
+        price_type: 价格类型 ('rpu' 或 'instance')
+        instance_type: 实例类型 (当price_type='instance'时需要)
+        term_type: 计费类型 ('on_demand' 或 'reserved')
         
     Returns:
         价格信息字典，包含price, currency, source等字段
@@ -75,20 +79,55 @@ def get_rpu_price_dynamic(region: str) -> Dict[str, Any]:
         }
         return region_mapping.get(region, region)
     
-    def query_api_price(region: str) -> Optional[Dict]:
+    def build_filters(region: str, price_type: str, instance_type: str = None) -> List[Dict]:
+        """构建API查询过滤器"""
+        location = get_location_name(region)
+        filters = [
+            {'Type': 'TERM_MATCH', 'Field': 'location', 'Value': location}
+        ]
+        
+        if price_type == 'rpu':
+            filters.append({'Type': 'TERM_MATCH', 'Field': 'productFamily', 'Value': 'Serverless'})
+        elif price_type == 'instance':
+            filters.extend([
+                {'Type': 'TERM_MATCH', 'Field': 'productFamily', 'Value': 'Compute Instance'},
+                {'Type': 'TERM_MATCH', 'Field': 'instanceType', 'Value': instance_type}
+            ])
+        
+        return filters
+    
+    def is_target_pricing(price_value: Dict, price_type: str, term_type: str) -> bool:
+        """判断是否为目标价格类型"""
+        unit = price_value.get('unit', '')
+        description = price_value.get('description', '')
+        
+        # 检查单位
+        if price_type == 'rpu' and unit != 'RPU-Hr':
+            return False
+        elif price_type == 'instance' and unit != 'Hrs':
+            return False
+        
+        # 检查计费类型
+        if term_type == 'on_demand':
+            # 按需定价：没有预付费，没有预留实例相关描述
+            return 'reservations' not in description.lower() and 'reserved' not in description.lower()
+        elif term_type == 'reserved':
+            # 预留实例：包含预留实例相关描述
+            return 'reserved' in description.lower() or 'reservations' in description.lower()
+        
+        return True
+    
+    def query_api_price(region: str, price_type: str, instance_type: str = None, 
+                       term_type: str = 'on_demand') -> Optional[Dict]:
         """使用API查询价格"""
         try:
             pricing_region = get_pricing_api_region(region)
-            location = get_location_name(region)
-            
             pricing_client = boto3.client('pricing', region_name=pricing_region)
+            filters = build_filters(region, price_type, instance_type)
             
             response = pricing_client.get_products(
                 ServiceCode='AmazonRedshift',
-                Filters=[
-                    {'Type': 'TERM_MATCH', 'Field': 'location', 'Value': location},
-                    {'Type': 'TERM_MATCH', 'Field': 'productFamily', 'Value': 'Serverless'}
-                ],
+                Filters=filters,
                 MaxResults=10
             )
             
@@ -97,156 +136,100 @@ def get_rpu_price_dynamic(region: str) -> Dict[str, Any]:
                 attributes = product.get('product', {}).get('attributes', {})
                 payment_option = attributes.get('paymentOption', '')
                 
-                terms = product.get('terms', {}).get('OnDemand', {})
-                for term_key, term_value in terms.items():
-                    price_dimensions = term_value.get('priceDimensions', {})
-                    for price_key, price_value in price_dimensions.items():
-                        unit = price_value.get('unit', '')
-                        description = price_value.get('description', '')
-                        price_per_unit = price_value.get('pricePerUnit', {})
-                        
-                        if unit == 'RPU-Hr' and price_per_unit:
-                            currency = list(price_per_unit.keys())[0]
-                            price = float(price_per_unit[currency])
-                            
-                            # 判断是否为按需定价（不是预留实例）
-                            is_on_demand = (
-                                not payment_option or  # 空的payment_option通常是按需
-                                payment_option == 'On Demand' or
-                                ('serverless usage' in description.lower() and 'reservations' not in description.lower())
-                            )
-                            
-                            # 调试信息
-                            # print(f"DEBUG: payment_option='{payment_option}', description='{description}', is_on_demand={is_on_demand}")
-                            
-                            if is_on_demand:
-                                return {'price': price, 'currency': currency, 'source': 'api'}
-            return None
-        except Exception:
-            return None
-    
-    def get_fallback_price(region: str) -> Dict:
-        """获取备用硬编码价格"""
-        fallback_prices = {
-            'cn-north-1': {'price': 2.692, 'currency': 'CNY'},
-            'cn-northwest-1': {'price': 2.093, 'currency': 'CNY'},
-            'us-east-1': {'price': 0.375, 'currency': 'USD'},
-            'us-west-2': {'price': 0.375, 'currency': 'USD'},
-            'eu-west-1': {'price': 0.375, 'currency': 'USD'},
-            'ap-southeast-1': {'price': 0.45, 'currency': 'USD'},
-        }
-        
-        if region in fallback_prices:
-            data = fallback_prices[region]
-            return {'price': data['price'], 'currency': data['currency'], 'source': 'hardcoded'}
-        else:
-            return {'price': 0.375, 'currency': 'USD', 'source': 'default'}
-    
-    # 首先尝试API查询
-    api_result = query_api_price(region)
-    if api_result:
-        return api_result
-    else:
-        return get_fallback_price(region)
-
-def get_instance_price_dynamic(node_type: str, region: str) -> Dict[str, Any]:
-    """
-    动态获取Redshift实例价格，优先使用AWS Pricing API，失败时使用备用价格
-    
-    Args:
-        node_type: 实例类型 (如 ra3.xlplus)
-        region: AWS区域
-        
-    Returns:
-        价格信息字典，包含price, currency, source等字段
-    """
-    def query_instance_api_price(node_type: str, region: str) -> Optional[Dict]:
-        """使用API查询实例价格"""
-        try:
-            pricing_region = 'cn-northwest-1' if region.startswith('cn-') else 'us-east-1'
-            location = {
-                'us-east-1': 'US East (N. Virginia)',
-                'us-west-2': 'US West (Oregon)',
-                'eu-west-1': 'Europe (Ireland)',
-                'ap-southeast-1': 'Asia Pacific (Singapore)',
-                'cn-north-1': 'China (Beijing)',
-                'cn-northwest-1': 'China (Ningxia)',
-            }.get(region, region)
-            
-            pricing_client = boto3.client('pricing', region_name=pricing_region)
-            
-            response = pricing_client.get_products(
-                ServiceCode='AmazonRedshift',
-                Filters=[
-                    {'Type': 'TERM_MATCH', 'Field': 'location', 'Value': location},
-                    {'Type': 'TERM_MATCH', 'Field': 'productFamily', 'Value': 'Compute Instance'},
-                    {'Type': 'TERM_MATCH', 'Field': 'instanceType', 'Value': node_type}
-                ],
-                MaxResults=5
-            )
-            
-            for product_str in response.get('PriceList', []):
-                product = json.loads(product_str)
+                # 选择正确的计费条款
+                terms_key = 'OnDemand' if term_type == 'on_demand' else 'Reserved'
+                terms = product.get('terms', {}).get(terms_key, {})
                 
-                # 查找按需定价
-                terms = product.get('terms', {}).get('OnDemand', {})
                 for term_key, term_value in terms.items():
                     price_dimensions = term_value.get('priceDimensions', {})
                     for price_key, price_value in price_dimensions.items():
-                        unit = price_value.get('unit', '')
                         price_per_unit = price_value.get('pricePerUnit', {})
                         
-                        if unit == 'Hrs' and price_per_unit:
+                        if price_per_unit and is_target_pricing(price_value, price_type, term_type):
                             currency = list(price_per_unit.keys())[0]
                             price = float(price_per_unit[currency])
+                            
+                            # 对于按需定价，进一步验证
+                            if term_type == 'on_demand':
+                                is_on_demand = (
+                                    not payment_option or
+                                    payment_option == 'On Demand' or
+                                    (price_type == 'rpu' and 'serverless usage' in price_value.get('description', '').lower())
+                                )
+                                if not is_on_demand:
+                                    continue
+                            
                             return {'price': price, 'currency': currency, 'source': 'api'}
             return None
         except Exception:
             return None
     
-    def get_fallback_instance_price(node_type: str, region: str) -> Dict:
-        """获取备用硬编码实例价格"""
-        # 中国区域定价表（每小时人民币）
-        cn_pricing_table = {
-            'dc2.large': 2.145,
-            'dc2.8xlarge': 41.60,
-            'ra3.large': 3.475,
-            'ra3.xlplus': 6.950,
-            'ra3.4xlarge': 20.864,
-            'ra3.16xlarge': 83.456,
-        }
+    def get_fallback_price(region: str, price_type: str, instance_type: str = None) -> Dict:
+        """获取备用硬编码价格"""
+        if price_type == 'rpu':
+            # RPU价格备用表
+            fallback_prices = {
+                'cn-north-1': {'price': 2.692, 'currency': 'CNY'},
+                'cn-northwest-1': {'price': 2.093, 'currency': 'CNY'},
+                'us-east-1': {'price': 0.375, 'currency': 'USD'},
+                'us-west-2': {'price': 0.375, 'currency': 'USD'},
+                'eu-west-1': {'price': 0.375, 'currency': 'USD'},
+                'ap-southeast-1': {'price': 0.45, 'currency': 'USD'},
+            }
+            
+            if region in fallback_prices:
+                data = fallback_prices[region]
+                return {'price': data['price'], 'currency': data['currency'], 'source': 'hardcoded'}
+            else:
+                return {'price': 0.375, 'currency': 'USD', 'source': 'default'}
         
-        # 美国区域定价表（每小时美元）
-        us_pricing_table = {
-            'dc2.large': 0.25,
-            'dc2.8xlarge': 4.80,
-            'ra3.large': 0.48,
-            'ra3.xlplus': 1.086,
-            'ra3.4xlarge': 3.26,
-            'ra3.16xlarge': 13.04,
-        }
+        elif price_type == 'instance':
+            # 实例价格备用表
+            cn_pricing_table = {
+                'dc2.large': 2.145, 'dc2.8xlarge': 41.60,
+                'ra3.large': 3.475, 'ra3.xlplus': 6.950,
+                'ra3.4xlarge': 20.864, 'ra3.16xlarge': 83.456,
+            }
+            
+            us_pricing_table = {
+                'dc2.large': 0.25, 'dc2.8xlarge': 4.80,
+                'ra3.large': 0.48, 'ra3.xlplus': 1.086,
+                'ra3.4xlarge': 3.26, 'ra3.16xlarge': 13.04,
+            }
+            
+            if region.startswith('cn-'):
+                pricing_table = cn_pricing_table
+                currency = 'CNY'
+            else:
+                pricing_table = us_pricing_table
+                currency = 'USD'
+            
+            if instance_type in pricing_table:
+                price = pricing_table[instance_type]
+            else:
+                # 未知实例类型使用ra3.xlplus价格
+                price = pricing_table.get('ra3.xlplus', 6.950 if region.startswith('cn-') else 1.086)
+            
+            return {'price': price, 'currency': currency, 'source': 'hardcoded'}
         
-        if region.startswith('cn-'):
-            pricing_table = cn_pricing_table
-            currency = 'CNY'
-        else:
-            pricing_table = us_pricing_table
-            currency = 'USD'
-        
-        if node_type in pricing_table:
-            price = pricing_table[node_type]
-        else:
-            # 未知实例类型使用ra3.xlplus价格
-            price = pricing_table.get('ra3.xlplus', 6.950 if region.startswith('cn-') else 1.086)
-        
-        return {'price': price, 'currency': currency, 'source': 'hardcoded'}
+        # 默认返回
+        return {'price': 0.0, 'currency': 'USD', 'source': 'error'}
     
     # 首先尝试API查询
-    api_result = query_instance_api_price(node_type, region)
+    api_result = query_api_price(region, price_type, instance_type, term_type)
     if api_result:
         return api_result
     else:
-        return get_fallback_instance_price(node_type, region)
+        return get_fallback_price(region, price_type, instance_type)
+
+# 为了向后兼容，保留原来的函数名
+def get_rpu_price_dynamic(region: str) -> Dict[str, Any]:
+    """RPU价格查询的兼容函数"""
+    return get_redshift_price_dynamic(region, 'rpu')
+
+def get_instance_price_dynamic(node_type: str, region: str) -> Dict[str, Any]:
+    """实例价格查询的兼容函数"""
+    return get_redshift_price_dynamic(region, 'instance', node_type)
 
 def validate_inputs(cluster_id: str, region: str, days: int) -> None:
     """
