@@ -6,13 +6,14 @@ A simple and efficient tool for analyzing Amazon Redshift cluster idle time and 
 
 ## 🌟 Features
 
-- 📊 **Smart Analysis**: Analyze actual cluster usage patterns based on multiple CloudWatch metrics
+- 📊 **Dual Analysis**: Provides both IO-level and query-level idle time analysis methods
 - ⏱️ **Precise Calculation**: Calculate idle time percentage and active state distribution
 - 💰 **Cost Assessment**: Evaluate potential cost savings from Serverless migration
 - 🌍 **Region Support**: Primarily supports China regions, limited functionality for Global regions
 - 🚀 **Easy to Use**: Single-file script with minimal deployment complexity
 - 🔍 **Data Validation**: Built-in data quality checks and permission validation
 - 🧪 **Comprehensive Testing**: Complete test suite included
+- 📋 **SQL Queries**: Direct SQL analysis scripts for running in Redshift
 
 ## 📦 Installation
 
@@ -60,6 +61,12 @@ python redshift_idle_calculator.py --cluster-id my-cluster --region us-east-1 --
 ### Run Tests
 ```bash
 python redshift_idle_calculator.py --test
+```
+
+### Use SQL Query Analysis (Optional)
+```sql
+-- Run in Redshift Query Editor
+-- File: redshift_query_idle_analysis.sql
 ```
 
 ## 📋 Parameters
@@ -148,9 +155,13 @@ Ensure the AWS credentials running the script have the following permissions:
 
 ## 🔍 How It Works
 
-### Active State Determination Rules
+### Dual Analysis Methods
 
-This tool determines cluster active state by analyzing the following CloudWatch metrics:
+This tool provides two complementary idle time analysis approaches:
+
+#### Method 1: IO-Level Analysis (Python Script)
+
+Analyzes CloudWatch metrics to determine cluster active state:
 
 | Metric | Threshold | Description |
 |--------|-----------|-------------|
@@ -158,18 +169,81 @@ This tool determines cluster active state by analyzing the following CloudWatch 
 | WriteIOPS | > 0 | Write I/O operations |
 | DatabaseConnections | > 0 | Database connection count |
 
-**Sampling Strategy**:
+**Characteristics**:
 - **Sampling Interval**: Fixed 60 seconds, aligned with Redshift Serverless billing cycle
-- **Data Retrieval**: Automatic batch querying to avoid CloudWatch 1440 data point limit
-- **Network Traffic**: Not used as active criteria (to avoid misleading system maintenance traffic)
+- **Detection Scope**: Includes all system-level activities (user queries, maintenance, monitoring, etc.)
+- **Accuracy**: Reflects actual compute resource usage
+- **Use Case**: Serverless migration cost evaluation
 
-**Active Logic**: A minute is marked as "active" when any metric exceeds its threshold.
+#### Method 2: Query-Level Analysis (SQL Script)
+
+Analyzes user query activity based on `sys_query_history` table:
+
+**Characteristics**:
+- **Analysis Scope**: Only user SQL query activities
+- **Calculation Method**: Conservative estimation (time span from first to last query)
+- **Data Source**: Redshift internal query history table
+- **Use Case**: Understanding user query patterns and frequency
+
+### Method Comparison
+
+| Dimension | IO-Level Analysis | Query-Level Analysis |
+|-----------|-------------------|---------------------|
+| **Detection Target** | Resource usage | User query activity |
+| **Idle Rate** | Usually lower (e.g., 86%) | Usually higher (e.g., 97%) |
+| **Includes** | System maintenance, monitoring, user queries | User queries only |
+| **Recommended Use** | Serverless migration decisions | Query pattern analysis |
 
 ### Cost Calculation Model
 
-1. **Current Cost**: Based on instance type and node count on-demand pricing
-2. **Serverless Cost**: Active time × hourly rate × 1.2 (assuming 20% premium)
+1. **Current Cost**: Based on instance type and node count on-demand pricing (dynamic API retrieval)
+2. **Serverless Cost**: Active time × RPU hourly rate (dynamic API retrieval)
 3. **Savings Calculation**: Current cost - Serverless cost
+
+## 📋 SQL Query Analysis Guide
+
+In addition to the Python script, this tool provides SQL query scripts for query-level idle analysis:
+
+### Usage Steps
+
+1. **Open Redshift Query Editor**
+   - Log into AWS Console
+   - Navigate to Amazon Redshift service
+   - Select your cluster and click "Query data"
+
+2. **Run Analysis Query**
+   ```sql
+   -- Copy content from redshift_query_idle_analysis.sql and execute
+   -- This query analyzes query activity patterns over the past 24 hours
+   ```
+
+3. **Interpret Results**
+   - **Analysis Period**: Analysis time window (24 hours)
+   - **Total Queries**: Total number of queries
+   - **Query Span**: Time span from first to last query
+   - **Idle Percentage (Conservative)**: Conservative idle percentage estimate
+   - **First/Last Query Time**: Query activity time range
+
+### Sample Query Results
+
+```
+=== REDSHIFT QUERY-LEVEL IDLE ANALYSIS ===
+Analysis Period: 24.00 hours
+Total Queries: 136 queries
+Successful Queries: 118 queries
+Query Span (First to Last): 0.58 hours
+Idle Time (Conservative): 23.42 hours
+Idle Percentage (Conservative): 97.59 %
+```
+
+### Analysis Method Comparison
+
+| Analysis Method | Typical Idle Rate | Use Case |
+|----------------|-------------------|----------|
+| **IO-Level Analysis** (Python Script) | 80-90% | Serverless migration decisions |
+| **Query-Level Analysis** (SQL Script) | 95-99% | Query pattern analysis |
+
+**Recommendation**: Use both methods together - IO-level analysis for cost evaluation, query-level analysis for understanding user activity patterns.
 
 ## 🧪 Testing Features
 

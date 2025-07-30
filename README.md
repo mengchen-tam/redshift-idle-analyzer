@@ -6,13 +6,14 @@
 
 ## 🌟 功能特性
 
-- 📊 **智能分析**: 基于多个CloudWatch指标分析集群实际使用模式
+- 📊 **双重分析**: 提供IO级别和查询级别两种空闲时间分析方法
 - ⏱️ **精确计算**: 计算空闲时间百分比和活跃状态分布
 - 💰 **成本评估**: 评估迁移到Serverless的潜在成本节省
 - 🌍 **区域支持**: 主要支持中国区域，Global区域功能有限
 - 🚀 **易于使用**: 单文件脚本，无需复杂部署
 - 🔍 **数据验证**: 内置数据质量检查和权限验证
 - 🧪 **测试完备**: 包含完整的测试套件
+- 📋 **SQL查询**: 提供直接在Redshift中运行的查询分析脚本
 
 ## 📦 安装
 
@@ -60,6 +61,12 @@ python redshift_idle_calculator.py --cluster-id my-cluster --region us-east-1 --
 ### 运行测试
 ```bash
 python redshift_idle_calculator.py --test
+```
+
+### 使用SQL查询分析（可选）
+```sql
+-- 在Redshift Query Editor中运行
+-- 文件: redshift_query_idle_analysis.sql
 ```
 
 ## 📋 参数说明
@@ -148,9 +155,13 @@ python redshift_idle_calculator.py --test
 
 ## 🔍 工作原理
 
-### 活跃状态判断规则
+### 双重分析方法
 
-该工具通过分析以下CloudWatch指标来判断集群活跃状态：
+本工具提供两种互补的空闲时间分析方法：
+
+#### 方法1: IO级别分析 (Python脚本)
+
+通过分析CloudWatch指标来判断集群活跃状态：
 
 | 指标 | 阈值 | 说明 |
 |------|------|------|
@@ -158,18 +169,81 @@ python redshift_idle_calculator.py --test
 | WriteIOPS | > 0 | 写入I/O操作 |
 | DatabaseConnections | > 0 | 数据库连接数 |
 
-**采样策略**：
+**特点**：
 - **采样间隔**: 固定60秒，与Redshift Serverless计费周期一致
-- **数据获取**: 自动分批查询，避免CloudWatch 1440个数据点限制
-- **网络流量**: 不作为活跃判断依据（避免系统维护流量的误导）
+- **检测范围**: 包含所有系统级活动（用户查询、后台维护、监控等）
+- **准确性**: 反映真实的计算资源使用情况
+- **适用场景**: Serverless迁移成本评估
 
-**活跃判断逻辑**: 当任一指标超过阈值时，该分钟被标记为"活跃"。
+#### 方法2: 查询级别分析 (SQL脚本)
+
+基于`sys_query_history`表分析用户查询活动：
+
+**特点**：
+- **分析范围**: 仅统计用户SQL查询活动
+- **计算方式**: 保守估算（从第一个查询到最后一个查询的时间跨度）
+- **数据来源**: Redshift内部查询历史表
+- **适用场景**: 了解用户查询模式和频率
+
+### 两种方法的差异
+
+| 维度 | IO级别分析 | 查询级别分析 |
+|------|------------|--------------|
+| **检测对象** | 底层资源使用 | 用户查询活动 |
+| **空闲率** | 通常较低（如86%） | 通常较高（如97%） |
+| **包含内容** | 系统维护、监控、用户查询 | 仅用户查询 |
+| **推荐用途** | Serverless迁移决策 | 查询模式分析 |
 
 ### 成本计算模型
 
-1. **当前成本**: 基于实例类型和节点数的按需定价
-2. **Serverless成本**: 活跃时间 × 小时费率 × 1.2（假设20%溢价）
+1. **当前成本**: 基于实例类型和节点数的按需定价（动态API获取）
+2. **Serverless成本**: 活跃时间 × RPU小时费率（动态API获取）
 3. **节省计算**: 当前成本 - Serverless成本
+
+## 📋 SQL查询分析使用指南
+
+除了Python脚本，本工具还提供SQL查询脚本进行查询级别的空闲分析：
+
+### 使用步骤
+
+1. **打开Redshift Query Editor**
+   - 登录AWS控制台
+   - 导航到Amazon Redshift服务
+   - 选择你的集群，点击"Query data"
+
+2. **运行分析查询**
+   ```sql
+   -- 复制 redshift_query_idle_analysis.sql 中的内容并执行
+   -- 该查询分析过去24小时的查询活动模式
+   ```
+
+3. **解读结果**
+   - **Analysis Period**: 分析时间段（24小时）
+   - **Total Queries**: 总查询数量
+   - **Query Span**: 从第一个查询到最后一个查询的时间跨度
+   - **Idle Percentage (Conservative)**: 保守估算的空闲百分比
+   - **First/Last Query Time**: 查询活动的时间范围
+
+### 查询结果示例
+
+```
+=== REDSHIFT QUERY-LEVEL IDLE ANALYSIS ===
+Analysis Period: 24.00 hours
+Total Queries: 136 queries
+Successful Queries: 118 queries
+Query Span (First to Last): 0.58 hours
+Idle Time (Conservative): 23.42 hours
+Idle Percentage (Conservative): 97.59 %
+```
+
+### 两种分析方法对比
+
+| 分析方法 | 典型空闲率 | 适用场景 |
+|----------|------------|----------|
+| **IO级别分析** (Python脚本) | 80-90% | Serverless迁移决策 |
+| **查询级别分析** (SQL脚本) | 95-99% | 查询模式分析 |
+
+**建议**: 结合两种方法使用，IO级别分析用于成本评估，查询级别分析用于了解用户活动模式。
 
 ## 🧪 测试功能
 
