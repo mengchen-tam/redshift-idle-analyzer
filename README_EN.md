@@ -181,7 +181,7 @@ Analyzes user query activity based on `sys_query_history` table:
 
 **Characteristics**:
 - **Analysis Scope**: Only user SQL query activities
-- **Calculation Method**: Conservative estimation (time span from first to last query)
+- **Calculation Method**: Conservative estimation based on query time span (Note: does not include detailed gap analysis between queries)
 - **Data Source**: Redshift internal query history table
 - **Use Case**: Understanding user query patterns and frequency
 
@@ -193,6 +193,19 @@ Analyzes user query activity based on `sys_query_history` table:
 | **Idle Rate** | Usually lower (e.g., 86%) | Usually higher (e.g., 97%) |
 | **Includes** | System maintenance, monitoring, user queries | User queries only |
 | **Recommended Use** | Serverless migration decisions | Query pattern analysis |
+
+### ⚠️ Query-Level Analysis Limitations
+
+**Important Note**: The current query-level analysis uses a simplified time span method that may not be precise enough:
+
+```
+Problem Scenario: 1 query every 2 hours for 1 minute each over 24 hours
+- Actual idle: ~99.2% (23 hours 48 minutes idle)
+- Current calculation: ~8.3% (24 hours - 22 hour query span)
+- Difference cause: Does not calculate specific gaps between queries
+```
+
+**More Accurate Analysis**: Use `redshift_query_gap_analysis.sql` for detailed gap analysis.
 
 ### Cost Calculation Model
 
@@ -211,10 +224,13 @@ In addition to the Python script, this tool provides SQL query scripts for query
    - Navigate to Amazon Redshift service
    - Select your cluster and click "Query data"
 
-2. **Run Analysis Query**
+2. **Choose Analysis Query**
    ```sql
-   -- Copy content from redshift_query_idle_analysis.sql and execute
-   -- This query analyzes query activity patterns over the past 24 hours
+   -- Basic analysis (fast but less precise)
+   -- File: redshift_query_idle_analysis.sql
+   
+   -- Accurate analysis (recommended, includes query gap analysis)
+   -- File: redshift_query_gap_analysis.sql
    ```
 
 3. **Interpret Results**
