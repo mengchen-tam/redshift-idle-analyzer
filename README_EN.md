@@ -9,7 +9,7 @@ A simple and efficient tool for analyzing Amazon Redshift cluster idle time and 
 - 📊 **Dual Analysis**: Provides both IO-level and query-level idle time analysis methods
 - ⏱️ **Precise Calculation**: Calculate idle time percentage and active state distribution
 - 💰 **Cost Assessment**: Evaluate potential cost savings from Serverless migration
-- 🌍 **Region Support**: Primarily supports China regions, limited functionality for Global regions
+- 🌍 **Region Support**: Theoretically supports all AWS regions, primarily tested and verified in China regions
 - 🚀 **Easy to Use**: Single-file script with minimal deployment complexity
 - 🔍 **Data Validation**: Built-in data quality checks and permission validation
 - 🧪 **Comprehensive Testing**: Complete test suite included
@@ -313,19 +313,23 @@ A:
 - Serverless RPU calculation: 1 RPU = 4 x RA3.XLPlus, minimum 8 RPU
 - Ensure using China region AWS credentials
 
-### Q: How accurate are Global regions and pricing?
-A: **Important Notes**:
-- **Testing Scope**: This tool has been thoroughly tested primarily in China regions (cn-north-1, cn-northwest-1)
-- **Global Regions**: US, Europe, Asia-Pacific and other Global regions have not been fully tested and may have compatibility issues
-- **Pricing Data**: All instance and RPU prices are hardcoded based on AWS official pricing as of January 2024
-- **Pricing Accuracy**: 
-  - China region prices are relatively accurate and regularly updated
-  - Global region prices are for reference only and may differ from actual prices
-  - Recommend verifying current AWS official pricing before use
+### Q: How is Global region support?
+A: **Feature Support**:
+- **Theoretical Support**: This tool theoretically supports all AWS regions, including US, Europe, Asia-Pacific and other Global regions
+- **Testing Verification**: Primarily tested and verified in China regions (cn-north-1, cn-northwest-1)
+- **Core Functions**: 
+  - **CloudWatch API**: Standard API calls, supports all regions
+  - **Redshift API**: Standard API calls, supports all regions
+  - **Pricing API**: Automatically selects correct API endpoint (Global regions use us-east-1)
+- **Pricing Data**: 
+  - **Dynamic Query**: Prioritizes AWS Pricing API for latest prices
+  - **Fallback Prices**: Includes fallback price tables for major Global regions
+  - **Auto Fallback**: Automatically uses fallback prices when API fails, ensuring tool availability
 
-**Recommendations**: 
-- Test functionality in a test environment before using in Global regions
-- Regularly check AWS official pricing pages to confirm price accuracy
+**Usage Recommendations**: 
+- Global region users can use directly with full functionality
+- Recommend testing in test environment before production use
+- Tool displays price source (api/hardcoded/default), pay attention to source information
 - Use cost estimation results as reference and conduct more detailed cost analysis
 
 ## 🔧 Troubleshooting
