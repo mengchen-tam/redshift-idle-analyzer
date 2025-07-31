@@ -67,6 +67,7 @@ python redshift_idle_calculator.py --test
 ```sql
 -- 在Redshift Query Editor中运行
 -- 文件: redshift_query_idle_analysis.sql
+-- 使用精确的间隔分析方法
 ```
 
 ## 📋 参数说明
@@ -194,18 +195,21 @@ python redshift_idle_calculator.py --test
 | **包含内容** | 系统维护、监控、用户查询 | 仅用户查询 |
 | **推荐用途** | Serverless迁移决策 | 查询模式分析 |
 
-### ⚠️ 查询级别分析的局限性
+### 📊 查询级别分析特点
 
-**重要提醒**: 当前的查询级别分析使用简化的时间跨度方法，可能不够精确：
+**精确计算方法**: 当前的查询级别分析使用间隔分析方法，提供准确的空闲时间计算：
 
 ```
-问题场景: 24小时内每2小时执行1次查询，每次1分钟
-- 实际空闲: 约99.2% (23小时48分钟空闲)
-- 当前计算: 约8.3% (24小时 - 22小时查询跨度)
-- 差异原因: 未计算查询间的具体间隔时间
-```
+计算逻辑: 
+总空闲时间 = 查询间隔时间 + 第一个查询前时间 + 最后查询后时间
+空闲百分比 = (总空闲时间 / 24小时) × 100%
 
-**更精确的分析**: 使用 `redshift_query_gap_analysis.sql` 进行详细的间隔分析。
+示例场景: 24小时内每2小时执行1次查询，每次1分钟
+- 查询间隔: 11次 × 119分钟 = 21小时59分钟
+- 查询前后时间: 约2小时
+- 总空闲时间: 约23小时59分钟
+- 空闲百分比: 约99.9%
+```
 
 ### 成本计算模型
 
@@ -224,13 +228,10 @@ python redshift_idle_calculator.py --test
    - 导航到Amazon Redshift服务
    - 选择你的集群，点击"Query data"
 
-2. **选择分析查询**
+2. **运行分析查询**
    ```sql
-   -- 基础分析 (快速但不够精确)
-   -- 文件: redshift_query_idle_analysis.sql
-   
-   -- 精确分析 (推荐，包含查询间隔分析)
-   -- 文件: redshift_query_gap_analysis.sql
+   -- 复制 redshift_query_idle_analysis.sql 中的内容并执行
+   -- 该查询使用精确的间隔分析方法，计算所有查询间的空闲时间
    ```
 
 3. **解读结果**
@@ -247,9 +248,12 @@ python redshift_idle_calculator.py --test
 Analysis Period: 24.00 hours
 Total Queries: 136 queries
 Successful Queries: 118 queries
-Query Span (First to Last): 0.58 hours
-Idle Time (Conservative): 23.42 hours
-Idle Percentage (Conservative): 97.59 %
+Total Execution Time: 0.0768 hours
+Gaps Between Queries: 0.45 hours
+Time Before First Query: 9.31 hours
+Time After Last Query: 13.66 hours
+Total Idle Time: 23.42 hours
+Idle Percentage: 97.59 %
 ```
 
 ### 两种分析方法对比
