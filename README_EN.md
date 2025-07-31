@@ -182,7 +182,7 @@ Analyzes user query activity based on `sys_query_history` table:
 
 **Characteristics**:
 - **Analysis Scope**: Only user SQL query activities
-- **Calculation Method**: Conservative estimation based on query time span (Note: does not include detailed gap analysis between queries)
+- **Calculation Method**: Conservative estimation based on query time span
 - **Data Source**: Redshift internal query history table
 - **Use Case**: Understanding user query patterns and frequency
 
